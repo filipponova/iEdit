@@ -47,7 +47,7 @@ use crate::helpers::*;
 use crate::oklab::StraightRgba;
 use crate::simd::memchr2;
 use crate::unicode::{self, Cursor, MeasurementConfig};
-use crate::{icu, simd};
+use crate::{highlight, icu, simd};
 
 /// The margin template is used for line numbers.
 /// The max. line number we should ever expect is probably 64-bit,
@@ -266,6 +266,8 @@ pub struct TextBuffer {
     overtype: bool,
 
     wants_cursor_visibility: bool,
+
+    highlight_state: Option<highlight::HighlightState>,
 }
 
 impl TextBuffer {
@@ -309,11 +311,13 @@ impl TextBuffer {
             line_highlight_enabled: false,
             ruler: 0,
             encoding: "UTF-8",
-            newlines_are_crlf: cfg!(windows), // Windows users want CRLF
+            newlines_are_crlf: false,
             insert_final_newline: false,
             overtype: false,
 
             wants_cursor_visibility: false,
+
+            highlight_state: None,
         })
     }
 
@@ -787,7 +791,7 @@ impl TextBuffer {
             }
 
             // We'll assume CRLF if more than half of the lines end in CRLF. If there is only a single line, we'll use the platform default.
-            let newlines_are_crlf = if lines == 0 { cfg!(windows) } else { crlf_count > lines / 2 };
+            let newlines_are_crlf = if lines == 0 { false } else { crlf_count > lines / 2 };
 
             // We'll assume tabs if there are more lines starting with tabs than with spaces.
             let indent_with_tabs = tab_indentations > space_indentations;
@@ -1755,6 +1759,11 @@ impl TextBuffer {
             Some(TextBufferSelection { beg, end }) => minmax(beg, end),
         };
 
+        // Syntax highlighting state: reused across visual lines of the same logical line.
+        let mut hl_tokens: Vec<highlight::Token> = Vec::new();
+        let mut hl_logical_line: CoordType = -1;
+        let mut hl_line_start_off: usize = 0;
+
         for y in 0..height {
             let scratch = scratch_arena(None);
             let mut line = BString::empty();
@@ -1991,6 +2000,107 @@ impl TextBuffer {
             }
 
             fb.replace_text(destination.top + y, destination.left, destination.right, &line);
+
+            // Apply syntax highlighting colors.
+            if let Some(hl) = &self.highlight_state {
+                let logical_line = cursor_beg.logical_pos.y;
+
+                // Re-tokenize when we move to a new logical line.
+                if logical_line != hl_logical_line {
+                    hl_logical_line = logical_line;
+                    hl_tokens.clear();
+
+                    // Find the start of this logical line.
+                    let line_start = if cursor_beg.logical_pos.x == 0 {
+                        cursor_beg.offset
+                    } else {
+                        // Move cursor to beginning of this logical line.
+                        let start_cursor = self.cursor_move_to_logical_internal(
+                            cursor_beg,
+                            Point { x: 0, y: logical_line },
+                        );
+                        start_cursor.offset
+                    };
+                    hl_line_start_off = line_start;
+
+                    // Extract the full logical line bytes.
+                    let mut line_bytes = Vec::new();
+                    let mut off = line_start;
+                    loop {
+                        let chunk = self.read_forward(off);
+                        if chunk.is_empty() {
+                            break;
+                        }
+                        for &b in chunk {
+                            if b == b'\n' || b == b'\r' {
+                                break;
+                            }
+                            line_bytes.push(b);
+                        }
+                        // Check if we hit a newline.
+                        let found_nl = chunk.iter().any(|&b| b == b'\n' || b == b'\r');
+                        if found_nl {
+                            break;
+                        }
+                        off += chunk.len();
+                    }
+
+                    // Get the state for this line.
+                    let state = if (logical_line as usize) < hl.line_states.len() {
+                        hl.line_states[logical_line as usize]
+                    } else {
+                        0
+                    };
+
+                    highlight::tokenize_line(hl.language, &line_bytes, state, &mut hl_tokens);
+                }
+
+                // Apply token colors to the visible portion of this visual line.
+                let fb_y = destination.top + y;
+                let text_left = destination.left + self.margin_width;
+                let vis_start = cursor_beg.offset.saturating_sub(hl_line_start_off);
+                let vis_end = cursor_end.offset.saturating_sub(hl_line_start_off);
+
+                for tok in &hl_tokens {
+                    let tok_end = tok.offset + tok.len;
+                    // Skip tokens entirely outside the visible range.
+                    if tok_end <= vis_start || tok.offset >= vis_end {
+                        continue;
+                    }
+                    if tok.kind == highlight::TokenKind::Default {
+                        continue;
+                    }
+
+                    // Clamp token to visible range.
+                    let clamp_start = tok.offset.max(vis_start);
+                    let clamp_end = tok_end.min(vis_end);
+
+                    // Convert byte offsets to visual columns.
+                    // We use cursor_move_to_offset_internal to get precise visual positions.
+                    let start_cursor = self.cursor_move_to_offset_internal(
+                        cursor_beg,
+                        hl_line_start_off + clamp_start,
+                    );
+                    let end_cursor = self.cursor_move_to_offset_internal(
+                        start_cursor,
+                        hl_line_start_off + clamp_end,
+                    );
+
+                    let col_start = (start_cursor.visual_pos.x - origin.x).max(0);
+                    let col_end = (end_cursor.visual_pos.x - origin.x).min(text_width);
+
+                    if col_start < col_end {
+                        let rect = Rect {
+                            left: text_left + col_start,
+                            top: fb_y,
+                            right: text_left + col_end,
+                            bottom: fb_y + 1,
+                        };
+                        let color = highlight::token_color(tok.kind, fb.indexed_colors());
+                        fb.blend_fg(rect, color);
+                    }
+                }
+            }
 
             cursor = cursor_end;
         }
@@ -2692,6 +2802,13 @@ impl TextBuffer {
             return;
         }
 
+        // Capture info for highlight recomputation before stats change.
+        let edit_line = self.undo_stack.back().map(|e| e.borrow().cursor.y).unwrap_or(0);
+        let old_line_count = self
+            .undo_stack
+            .back()
+            .map_or(self.stats.logical_lines, |e| e.borrow().stats_before.logical_lines);
+
         #[cfg(debug_assertions)]
         {
             let entry = self.undo_stack.back_mut().unwrap().borrow_mut();
@@ -2729,6 +2846,7 @@ impl TextBuffer {
         }
 
         self.recalc_after_content_changed();
+        self.recompute_highlight(edit_line, old_line_count);
     }
 
     /// Undo the last edit operation.
@@ -2745,6 +2863,7 @@ impl TextBuffer {
         let buffer_generation = self.buffer.generation();
         let mut entry_buffer_generation = None;
         let mut damage_start = CoordType::MAX;
+        let old_line_count = self.stats.logical_lines;
 
         loop {
             // Transfer the last entry from the undo stack to the redo stack or vice versa.
@@ -2864,6 +2983,7 @@ impl TextBuffer {
 
         if entry_buffer_generation.is_some() {
             self.recalc_after_content_changed();
+            self.recompute_highlight(damage_start, old_line_count);
         }
     }
 
@@ -2875,6 +2995,162 @@ impl TextBuffer {
     /// For interfacing with ICU.
     pub fn read_forward(&self, off: usize) -> &[u8] {
         self.buffer.read_forward(off)
+    }
+
+    /// Enables syntax highlighting for the given language.
+    /// Initializes per-line states by tokenizing the entire document.
+    pub fn enable_highlighting(&mut self, language: highlight::Language) {
+        let mut hl = highlight::HighlightState::new(language);
+        let mut state: u8 = 0;
+        let mut tokens = Vec::new();
+        let mut off = 0;
+        let total_len = self.buffer.len();
+
+        while off < total_len {
+            // Extract a line from the buffer.
+            let mut line_bytes = Vec::new();
+            let mut line_off = off;
+            loop {
+                let chunk = self.buffer.read_forward(line_off);
+                if chunk.is_empty() {
+                    break;
+                }
+                let mut found_nl = false;
+                for &b in chunk {
+                    if b == b'\n' {
+                        found_nl = true;
+                        break;
+                    }
+                    if b == b'\r' {
+                        found_nl = true;
+                        break;
+                    }
+                    line_bytes.push(b);
+                }
+                line_off += if found_nl {
+                    // Include the newline in the offset advance but not in line_bytes.
+                    let nl_pos = chunk.iter().position(|&b| b == b'\n' || b == b'\r').unwrap();
+                    let mut advance = nl_pos + 1;
+                    // Handle \r\n.
+                    if nl_pos < chunk.len() - 1
+                        && chunk[nl_pos] == b'\r'
+                        && chunk[nl_pos + 1] == b'\n'
+                    {
+                        advance += 1;
+                    }
+                    advance
+                } else {
+                    chunk.len()
+                };
+                if found_nl {
+                    break;
+                }
+            }
+
+            state = highlight::tokenize_line(language, &line_bytes, state, &mut tokens);
+            tokens.clear();
+            hl.line_states.push(state);
+            off = line_off;
+        }
+
+        self.highlight_state = Some(hl);
+    }
+
+    /// Returns the current highlighting language, if any.
+    pub fn highlight_language(&self) -> Option<highlight::Language> {
+        self.highlight_state.as_ref().map(|hl| hl.language)
+    }
+
+    /// Recomputes the highlighting state after an edit.
+    ///
+    /// `from_line` is the first logical line that may have changed.
+    /// `old_line_count` is the total number of logical lines before the edit.
+    /// The current `self.stats.logical_lines` is the count after the edit.
+    fn recompute_highlight(&mut self, from_line: CoordType, old_line_count: CoordType) {
+        let Some(hl) = &mut self.highlight_state else {
+            return;
+        };
+
+        let new_line_count = self.stats.logical_lines as usize;
+        let old_line_count = old_line_count as usize;
+        let from = from_line as usize;
+
+        // line_states has logical_lines + 1 entries: one state at the *start* of each
+        // line, plus a trailing state after the last line for multi-line propagation.
+        let new_states_len = new_line_count + 1;
+
+        // Adjust the line_states vector for inserted/deleted lines.
+        if new_line_count > old_line_count {
+            // Lines were inserted. Splice in placeholder states (0) after `from`.
+            let added = new_line_count - old_line_count;
+            let insert_at = (from + 1).min(hl.line_states.len());
+            hl.line_states.splice(insert_at..insert_at, std::iter::repeat_n(0, added));
+        } else if new_line_count < old_line_count {
+            // Lines were deleted. Remove states after `from`.
+            let removed = old_line_count - new_line_count;
+            let remove_start = (from + 1).min(hl.line_states.len());
+            let remove_end = (remove_start + removed).min(hl.line_states.len());
+            hl.line_states.drain(remove_start..remove_end);
+        }
+
+        // Resize to logical_lines + 1 to preserve the trailing terminal state.
+        hl.line_states.resize(new_states_len, 0);
+
+        // Recompute states from the affected line onward, with early exit on convergence.
+        let buffer = &self.buffer;
+        hl.recompute_states(from, &|line_idx| {
+            // Navigate to logical line `line_idx` by scanning from the start.
+            // This is O(n) per line but recompute_states exits early on convergence.
+            let mut current_line = 0usize;
+            let mut off = 0usize;
+            let total = buffer.len();
+
+            while off < total && current_line < line_idx {
+                let chunk = buffer.read_forward(off);
+                if chunk.is_empty() {
+                    break;
+                }
+                for (i, &b) in chunk.iter().enumerate() {
+                    if b == b'\n' {
+                        current_line += 1;
+                        if current_line == line_idx {
+                            off += i + 1;
+                            break;
+                        }
+                    }
+                }
+                if current_line < line_idx {
+                    off += chunk.len();
+                }
+            }
+
+            if current_line != line_idx {
+                return None;
+            }
+
+            // Extract the line bytes.
+            let mut line_bytes = Vec::new();
+            loop {
+                let chunk = buffer.read_forward(off);
+                if chunk.is_empty() {
+                    break;
+                }
+                let mut found_nl = false;
+                for &b in chunk {
+                    if b == b'\n' || b == b'\r' {
+                        found_nl = true;
+                        break;
+                    }
+                    line_bytes.push(b);
+                }
+                if found_nl {
+                    break;
+                }
+                off += chunk.len();
+            }
+
+            Some(line_bytes)
+        });
     }
 }
 
