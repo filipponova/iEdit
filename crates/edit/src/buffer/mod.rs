@@ -2802,6 +2802,12 @@ impl TextBuffer {
             return;
         }
 
+        // Capture info for highlight recomputation before stats change.
+        let edit_line = self.undo_stack.back().map(|e| e.borrow().cursor.y).unwrap_or(0);
+        let old_line_count = self.undo_stack.back().map_or(self.stats.logical_lines, |e| {
+            e.borrow().stats_before.logical_lines
+        });
+
         #[cfg(debug_assertions)]
         {
             let entry = self.undo_stack.back_mut().unwrap().borrow_mut();
@@ -2839,6 +2845,7 @@ impl TextBuffer {
         }
 
         self.recalc_after_content_changed();
+        self.recompute_highlight(edit_line, old_line_count);
     }
 
     /// Undo the last edit operation.
@@ -2855,6 +2862,7 @@ impl TextBuffer {
         let buffer_generation = self.buffer.generation();
         let mut entry_buffer_generation = None;
         let mut damage_start = CoordType::MAX;
+        let old_line_count = self.stats.logical_lines;
 
         loop {
             // Transfer the last entry from the undo stack to the redo stack or vice versa.
@@ -2974,6 +2982,7 @@ impl TextBuffer {
 
         if entry_buffer_generation.is_some() {
             self.recalc_after_content_changed();
+            self.recompute_highlight(damage_start, old_line_count);
         }
     }
 
@@ -3049,6 +3058,94 @@ impl TextBuffer {
     /// Returns the current highlighting language, if any.
     pub fn highlight_language(&self) -> Option<highlight::Language> {
         self.highlight_state.as_ref().map(|hl| hl.language)
+    }
+
+    /// Recomputes the highlighting state after an edit.
+    ///
+    /// `from_line` is the first logical line that may have changed.
+    /// `old_line_count` is the total number of logical lines before the edit.
+    /// The current `self.stats.logical_lines` is the count after the edit.
+    fn recompute_highlight(&mut self, from_line: CoordType, old_line_count: CoordType) {
+        let Some(hl) = &mut self.highlight_state else {
+            return;
+        };
+
+        let new_line_count = self.stats.logical_lines as usize;
+        let old_line_count = old_line_count as usize;
+        let from = from_line as usize;
+
+        // Adjust the line_states vector for inserted/deleted lines.
+        if new_line_count > old_line_count {
+            // Lines were inserted. Splice in placeholder states (0) after `from`.
+            let added = new_line_count - old_line_count;
+            let insert_at = (from + 1).min(hl.line_states.len());
+            hl.line_states.splice(insert_at..insert_at, std::iter::repeat_n(0, added));
+        } else if new_line_count < old_line_count {
+            // Lines were deleted. Remove states after `from`.
+            let removed = old_line_count - new_line_count;
+            let remove_start = (from + 1).min(hl.line_states.len());
+            let remove_end = (remove_start + removed).min(hl.line_states.len());
+            hl.line_states.drain(remove_start..remove_end);
+        }
+
+        // Truncate or extend to match current line count.
+        hl.line_states.resize(new_line_count, 0);
+
+        // Recompute states from the affected line onward, with early exit on convergence.
+        let buffer = &self.buffer;
+        hl.recompute_states(from, &|line_idx| {
+            // Navigate to logical line `line_idx` by scanning from the start.
+            // This is O(n) per line but recompute_states exits early on convergence.
+            let mut current_line = 0usize;
+            let mut off = 0usize;
+            let total = buffer.len();
+
+            while off < total && current_line < line_idx {
+                let chunk = buffer.read_forward(off);
+                if chunk.is_empty() {
+                    break;
+                }
+                for (i, &b) in chunk.iter().enumerate() {
+                    if b == b'\n' {
+                        current_line += 1;
+                        if current_line == line_idx {
+                            off += i + 1;
+                            break;
+                        }
+                    }
+                }
+                if current_line < line_idx {
+                    off += chunk.len();
+                }
+            }
+
+            if current_line != line_idx {
+                return None;
+            }
+
+            // Extract the line bytes.
+            let mut line_bytes = Vec::new();
+            loop {
+                let chunk = buffer.read_forward(off);
+                if chunk.is_empty() {
+                    break;
+                }
+                let mut found_nl = false;
+                for &b in chunk {
+                    if b == b'\n' || b == b'\r' {
+                        found_nl = true;
+                        break;
+                    }
+                    line_bytes.push(b);
+                }
+                if found_nl {
+                    break;
+                }
+                off += chunk.len();
+            }
+
+            Some(line_bytes)
+        });
     }
 }
 

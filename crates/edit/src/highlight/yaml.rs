@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn test_key_value_string() {
         let (tokens, _) = tokenize("name: hello");
-        assert!(tokens.len() >= 2);
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[0].kind, TokenKind::Key); // "name"
         assert_eq!(tokens[1].kind, TokenKind::Punctuation); // ":"
         assert_eq!(tokens[2].kind, TokenKind::String); // "hello"
@@ -396,6 +396,7 @@ mod tests {
     #[test]
     fn test_key_value_number() {
         let (tokens, _) = tokenize("port: 8080");
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[0].kind, TokenKind::Key);
         assert_eq!(tokens[2].kind, TokenKind::Number);
     }
@@ -403,6 +404,7 @@ mod tests {
     #[test]
     fn test_key_value_boolean() {
         let (tokens, _) = tokenize("enabled: true");
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[0].kind, TokenKind::Key);
         assert_eq!(tokens[2].kind, TokenKind::Boolean);
     }
@@ -410,6 +412,7 @@ mod tests {
     #[test]
     fn test_key_value_null() {
         let (tokens, _) = tokenize("value: null");
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[0].kind, TokenKind::Key);
         assert_eq!(tokens[2].kind, TokenKind::Null);
     }
@@ -417,6 +420,7 @@ mod tests {
     #[test]
     fn test_quoted_string_value() {
         let (tokens, _) = tokenize("msg: \"hello world\"");
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[0].kind, TokenKind::Key);
         assert_eq!(tokens[2].kind, TokenKind::String);
     }
