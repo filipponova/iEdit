@@ -3075,6 +3075,10 @@ impl TextBuffer {
         let old_line_count = old_line_count as usize;
         let from = from_line as usize;
 
+        // line_states has logical_lines + 1 entries: one state at the *start* of each
+        // line, plus a trailing state after the last line for multi-line propagation.
+        let new_states_len = new_line_count + 1;
+
         // Adjust the line_states vector for inserted/deleted lines.
         if new_line_count > old_line_count {
             // Lines were inserted. Splice in placeholder states (0) after `from`.
@@ -3089,8 +3093,8 @@ impl TextBuffer {
             hl.line_states.drain(remove_start..remove_end);
         }
 
-        // Truncate or extend to match current line count.
-        hl.line_states.resize(new_line_count, 0);
+        // Resize to logical_lines + 1 to preserve the trailing terminal state.
+        hl.line_states.resize(new_states_len, 0);
 
         // Recompute states from the affected line onward, with early exit on convergence.
         let buffer = &self.buffer;
