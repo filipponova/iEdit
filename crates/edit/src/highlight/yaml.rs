@@ -57,7 +57,11 @@ pub fn tokenize_line(line: &[u8], state: u8, tokens: &mut Vec<Token>) -> u8 {
 
     // Full-line comment.
     if line[i] == b'#' {
-        tokens.push(Token { offset: indent_start, len: len - indent_start, kind: TokenKind::Comment });
+        tokens.push(Token {
+            offset: indent_start,
+            len: len - indent_start,
+            kind: TokenKind::Comment,
+        });
         return STATE_NORMAL;
     }
 
@@ -106,7 +110,9 @@ fn try_tokenize_key_value(line: &[u8], start: usize, tokens: &mut Vec<Token>) ->
             i += 1; // closing quote
         }
         // Look for colon after key.
-        if i < len && line[i] == b':' && (i + 1 >= len || line[i + 1] == b' ' || line[i + 1] == b'\n')
+        if i < len
+            && line[i] == b':'
+            && (i + 1 >= len || line[i + 1] == b' ' || line[i + 1] == b'\n')
         {
             tokens.push(Token { offset: key_start, len: i - key_start, kind: TokenKind::Key });
             tokens.push(Token { offset: i, len: 1, kind: TokenKind::Punctuation });

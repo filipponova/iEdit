@@ -74,7 +74,11 @@ pub fn tokenize_line(line: &[u8], _state: u8, tokens: &mut Vec<Token>) -> u8 {
         }
 
         if key_end > key_start {
-            tokens.push(Token { offset: key_start, len: key_end - key_start, kind: TokenKind::Key });
+            tokens.push(Token {
+                offset: key_start,
+                len: key_end - key_start,
+                kind: TokenKind::Key,
+            });
         }
 
         // The delimiter (= or :).

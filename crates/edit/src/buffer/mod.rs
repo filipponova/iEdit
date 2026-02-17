@@ -44,11 +44,10 @@ use crate::clipboard::Clipboard;
 use crate::document::{ReadableDocument, WriteableDocument};
 use crate::framebuffer::{Framebuffer, IndexedColor};
 use crate::helpers::*;
-use crate::highlight;
 use crate::oklab::StraightRgba;
 use crate::simd::memchr2;
 use crate::unicode::{self, Cursor, MeasurementConfig};
-use crate::{icu, simd};
+use crate::{highlight, icu, simd};
 
 /// The margin template is used for line numbers.
 /// The max. line number we should ever expect is probably 64-bit,
@@ -3023,7 +3022,9 @@ impl TextBuffer {
                     let nl_pos = chunk.iter().position(|&b| b == b'\n' || b == b'\r').unwrap();
                     let mut advance = nl_pos + 1;
                     // Handle \r\n.
-                    if nl_pos < chunk.len() - 1 && chunk[nl_pos] == b'\r' && chunk[nl_pos + 1] == b'\n'
+                    if nl_pos < chunk.len() - 1
+                        && chunk[nl_pos] == b'\r'
+                        && chunk[nl_pos + 1] == b'\n'
                     {
                         advance += 1;
                     }

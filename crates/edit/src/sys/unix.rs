@@ -411,7 +411,6 @@ pub fn load_icu() -> io::Result<LibIcu> {
     }
 }
 
-
 pub fn preferred_languages(arena: &Arena) -> BVec<'_, BString<'_>> {
     let mut locales = BVec::empty();
 

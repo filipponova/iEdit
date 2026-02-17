@@ -34,16 +34,9 @@ fn configure_icu() {
     let cpp_exports = env_opt("EDIT_CFG_ICU_CPP_EXPORTS");
     let renaming_version = env_opt("EDIT_CFG_ICU_RENAMING_VERSION");
 
-    let icuuc_soname = if !icuuc_soname.is_empty() {
-        &icuuc_soname
-    } else {
-        "libicucore.dylib"
-    };
-    let icui18n_soname = if !icui18n_soname.is_empty() {
-        &icui18n_soname
-    } else {
-        "libicucore.dylib"
-    };
+    let icuuc_soname = if !icuuc_soname.is_empty() { &icuuc_soname } else { "libicucore.dylib" };
+    let icui18n_soname =
+        if !icui18n_soname.is_empty() { &icui18n_soname } else { "libicucore.dylib" };
     let icu_export_prefix =
         if !cpp_exports.is_empty() && cpp_exports.parse::<bool>().unwrap() { "_" } else { "" };
     let icu_export_suffix =

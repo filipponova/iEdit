@@ -68,5 +68,4 @@ mod tests {
         assert_eq!(norm("/a/b/c/../../../../d"), "/d");
         assert_eq!(norm("//"), "/");
     }
-
 }
