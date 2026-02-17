@@ -2804,9 +2804,10 @@ impl TextBuffer {
 
         // Capture info for highlight recomputation before stats change.
         let edit_line = self.undo_stack.back().map(|e| e.borrow().cursor.y).unwrap_or(0);
-        let old_line_count = self.undo_stack.back().map_or(self.stats.logical_lines, |e| {
-            e.borrow().stats_before.logical_lines
-        });
+        let old_line_count = self
+            .undo_stack
+            .back()
+            .map_or(self.stats.logical_lines, |e| e.borrow().stats_before.logical_lines);
 
         #[cfg(debug_assertions)]
         {

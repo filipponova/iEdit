@@ -289,6 +289,7 @@ mod tests {
     #[test]
     fn test_key_value_no_spaces() {
         let tokens = tokenize("key=value");
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[0].kind, TokenKind::Key);
         assert_eq!(tokens[1].kind, TokenKind::Punctuation);
         assert_eq!(tokens[2].kind, TokenKind::String);
@@ -297,6 +298,7 @@ mod tests {
     #[test]
     fn test_key_value_number() {
         let tokens = tokenize("port = 8080");
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[0].kind, TokenKind::Key);
         assert_eq!(tokens[2].kind, TokenKind::Number);
     }
@@ -304,6 +306,7 @@ mod tests {
     #[test]
     fn test_key_value_boolean() {
         let tokens = tokenize("enabled = true");
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[0].kind, TokenKind::Key);
         assert_eq!(tokens[2].kind, TokenKind::Boolean);
     }
@@ -311,6 +314,7 @@ mod tests {
     #[test]
     fn test_key_value_quoted() {
         let tokens = tokenize("name = \"hello world\"");
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[0].kind, TokenKind::Key);
         assert_eq!(tokens[2].kind, TokenKind::String);
     }
@@ -331,6 +335,7 @@ mod tests {
     #[test]
     fn test_null_value() {
         let tokens = tokenize("value = none");
+        assert!(tokens.len() >= 3);
         assert_eq!(tokens[2].kind, TokenKind::Null);
     }
 
