@@ -1,6 +1,6 @@
 # iEdit (ie)
 
-![Logo](assets/ie.png)
+![iEdit logo](assets/ie.png)
 
 A simple, fast terminal text editor for macOS.
 
