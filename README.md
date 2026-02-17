@@ -1,5 +1,7 @@
 # iEdit (ie)
 
+![Logo](assets/ie.png)
+
 A simple, fast terminal text editor for macOS.
 
 iEdit is a fork of [Microsoft Edit](https://github.com/microsoft/edit), a terminal text editor inspired by the classic MS-DOS Editor. This fork was created due to the slow pace of adding key features like syntax highlighting in the original project, and its primary focus on Windows. iEdit is dedicated to macOS and aims to deliver a lightweight, modern editing experience with features that matter.
