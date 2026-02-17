@@ -20,14 +20,12 @@ pub fn tokenize_line(line: &[u8], state: u8, tokens: &mut Vec<Token>) -> u8 {
 
     // If we're in a block scalar, check indentation.
     // Block scalars continue as long as lines are indented (or empty).
-    if state == STATE_BLOCK_SCALAR {
-        if line[0] == b' ' || line[0] == b'\t' {
-            // Still inside block scalar, entire line is a string.
-            tokens.push(Token { offset: 0, len: line.len(), kind: TokenKind::String });
-            return STATE_BLOCK_SCALAR;
-        }
-        // No longer indented => exit block scalar, fall through to normal parsing.
+    if state == STATE_BLOCK_SCALAR && (line[0] == b' ' || line[0] == b'\t') {
+        // Still inside block scalar, entire line is a string.
+        tokens.push(Token { offset: 0, len: line.len(), kind: TokenKind::String });
+        return STATE_BLOCK_SCALAR;
     }
+    // No longer indented => exit block scalar, fall through to normal parsing.
 
     let mut i = 0;
     let len = line.len();
