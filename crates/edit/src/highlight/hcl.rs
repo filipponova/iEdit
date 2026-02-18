@@ -97,10 +97,10 @@ fn tokenize_block_comment(line: &[u8], start: usize, tokens: &mut Vec<Token>) ->
     while i + 1 < len {
         if line[i] == b'*' && line[i + 1] == b'/' {
             tokens.push(Token { offset: start, len: i + 2 - start, kind: TokenKind::Comment });
-            let rest_start = i + 2;
-            skip_space(line, &mut (i + 2));
-            if i + 2 < len {
-                return tokenize_expression(line, rest_start, tokens);
+            let mut rest = i + 2;
+            skip_space(line, &mut rest);
+            if rest < len {
+                return tokenize_expression(line, rest, tokens);
             }
             return STATE_NORMAL;
         }
@@ -113,6 +113,14 @@ fn tokenize_block_comment(line: &[u8], start: usize, tokens: &mut Vec<Token>) ->
 }
 
 /// Computes a simple hash for the heredoc tag to store in state.
+///
+/// NOTE: This uses a u8 hash (254 possible values) to fit the per-line state model
+/// shared across all tokenizers. Hash collisions are theoretically possible between
+/// different heredoc tags, which could cause incorrect closing. In practice this is
+/// acceptable because: (1) HCL files rarely use more than a few distinct tags (EOF,
+/// EOT, POLICY, JSON), (2) the worst case is a visual highlighting artifact, not a
+/// crash, and (3) storing the full tag would require changing the HighlightState
+/// architecture for all languages.
 fn heredoc_tag_hash(tag: &[u8]) -> u8 {
     let mut h: u8 = 0;
     for &b in tag {
@@ -204,34 +212,44 @@ fn tokenize_expression(line: &[u8], mut i: usize, tokens: &mut Vec<Token>) -> u8
             }
             // Operators and assignment.
             b'=' => {
-                let op_len = if i + 1 < len && line[i + 1] == b'>' { 2 } else { 1 };
+                let op_len =
+                    if i + 1 < len && (line[i + 1] == b'>' || line[i + 1] == b'=') { 2 } else { 1 };
                 tokens.push(Token { offset: i, len: op_len, kind: TokenKind::Punctuation });
                 i += op_len;
             }
-            b'!' if i + 1 < len && line[i + 1] == b'=' => {
-                tokens.push(Token { offset: i, len: 2, kind: TokenKind::Punctuation });
-                i += 2;
+            b'!' => {
+                let op_len = if i + 1 < len && line[i + 1] == b'=' { 2 } else { 1 };
+                tokens.push(Token { offset: i, len: op_len, kind: TokenKind::Punctuation });
+                i += op_len;
             }
             b'<' | b'>' => {
                 let op_len = if i + 1 < len && line[i + 1] == b'=' { 2 } else { 1 };
                 tokens.push(Token { offset: i, len: op_len, kind: TokenKind::Punctuation });
                 i += op_len;
             }
-            b'?' | b'!' | b'.' | b'*' => {
+            b'?' | b'.' | b'*' | b'+' | b'-' => {
                 tokens.push(Token { offset: i, len: 1, kind: TokenKind::Punctuation });
                 i += 1;
             }
-            b'&' if i + 1 < len && line[i + 1] == b'&' => {
-                tokens.push(Token { offset: i, len: 2, kind: TokenKind::Punctuation });
-                i += 2;
+            b'/' => {
+                // Standalone division operator (not a comment start, already handled above).
+                tokens.push(Token { offset: i, len: 1, kind: TokenKind::Punctuation });
+                i += 1;
             }
-            b'|' if i + 1 < len && line[i + 1] == b'|' => {
-                tokens.push(Token { offset: i, len: 2, kind: TokenKind::Punctuation });
-                i += 2;
+            b'&' => {
+                let op_len = if i + 1 < len && line[i + 1] == b'&' { 2 } else { 1 };
+                tokens.push(Token { offset: i, len: op_len, kind: TokenKind::Punctuation });
+                i += op_len;
             }
-            b'%' if i + 1 < len && line[i + 1] == b'{' => {
-                tokens.push(Token { offset: i, len: 2, kind: TokenKind::Punctuation });
-                i += 2;
+            b'|' => {
+                let op_len = if i + 1 < len && line[i + 1] == b'|' { 2 } else { 1 };
+                tokens.push(Token { offset: i, len: op_len, kind: TokenKind::Punctuation });
+                i += op_len;
+            }
+            b'%' => {
+                let op_len = if i + 1 < len && line[i + 1] == b'{' { 2 } else { 1 };
+                tokens.push(Token { offset: i, len: op_len, kind: TokenKind::Punctuation });
+                i += op_len;
             }
             // Identifier or keyword/value.
             _ if is_ident_start(line[i]) => {
@@ -267,7 +285,8 @@ fn tokenize_string(line: &[u8], start: usize, tokens: &mut Vec<Token>) -> usize 
     while i < len {
         match line[i] {
             b'\\' => {
-                i += 2; // skip escape sequence
+                // Skip escape sequence. Guard against backslash at end of line.
+                i = if i + 1 < len { i + 2 } else { i + 1 };
             }
             b'"' => {
                 i += 1; // closing quote
@@ -295,9 +314,9 @@ fn tokenize_heredoc_start(line: &[u8], start: usize, tokens: &mut Vec<Token>) ->
         i += 1;
     }
 
-    // The tag name.
+    // The tag name. HCL heredoc tags are identifier-like: letters, digits, and underscores.
     let tag_start = i;
-    while i < len && is_ident_char(line[i]) {
+    while i < len && (line[i].is_ascii_alphanumeric() || line[i] == b'_') {
         i += 1;
     }
 
