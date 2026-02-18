@@ -8,6 +8,7 @@
 //! state to handle multi-line constructs (block comments, heredocs, etc.).
 
 mod conf;
+mod hcl;
 mod yaml;
 
 use crate::framebuffer::IndexedColor;
@@ -18,6 +19,7 @@ use crate::oklab::StraightRgba;
 pub enum Language {
     Yaml,
     Conf,
+    Hcl,
 }
 
 /// Detects the language from a file name based on extension or well-known names.
@@ -36,6 +38,7 @@ pub fn detect_language(filename: &str) -> Option<Language> {
     match ext {
         "yml" | "yaml" => Some(Language::Yaml),
         "conf" | "ini" | "cfg" | "cnf" | "properties" | "env" | "toml" => Some(Language::Conf),
+        "tf" | "tfvars" | "hcl" => Some(Language::Hcl),
         _ => None,
     }
 }
@@ -54,6 +57,7 @@ pub enum TokenKind {
     Anchor,
     Tag,
     Section,
+    Keyword,
 }
 
 /// A token produced by the tokenizer, representing a colored span of text.
@@ -81,6 +85,7 @@ pub fn token_color(kind: TokenKind, colors: &[StraightRgba]) -> StraightRgba {
         TokenKind::Anchor => IndexedColor::Yellow,
         TokenKind::Tag => IndexedColor::BrightCyan,
         TokenKind::Section => IndexedColor::Yellow,
+        TokenKind::Keyword => IndexedColor::Red,
     };
     colors[idx as usize]
 }
@@ -93,6 +98,7 @@ pub fn tokenize_line(lang: Language, line: &[u8], state: u8, tokens: &mut Vec<To
     match lang {
         Language::Yaml => yaml::tokenize_line(line, state, tokens),
         Language::Conf => conf::tokenize_line(line, state, tokens),
+        Language::Hcl => hcl::tokenize_line(line, state, tokens),
     }
 }
 
