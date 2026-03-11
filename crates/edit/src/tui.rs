@@ -2891,8 +2891,7 @@ impl<'a> Context<'a, '_> {
                                 let delta_y =
                                     self.tui.mouse_position.y - self.tui.mouse_down_position.y;
                                 sc.scroll_offset.y = sc.scroll_offset_y_drag_start
-                                    + (delta_y as i64 * scrollable_height as i64
-                                        / trackable as i64)
+                                    + (delta_y as i64 * scrollable_height as i64 / trackable as i64)
                                         as CoordType;
                             }
 
