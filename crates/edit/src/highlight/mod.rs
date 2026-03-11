@@ -43,6 +43,15 @@ pub fn detect_language(filename: &str) -> Option<Language> {
     }
 }
 
+/// Returns the line comment prefix for a given language.
+pub fn comment_prefix(lang: Language) -> &'static str {
+    match lang {
+        Language::Yaml => "# ",
+        Language::Conf => "# ",
+        Language::Hcl => "# ",
+    }
+}
+
 /// The kind of a syntax token, used to determine its color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
@@ -143,6 +152,43 @@ impl HighlightState {
                 self.line_states.push(state);
             }
             line_idx = next;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_comment_prefix_yaml() {
+        assert_eq!(comment_prefix(Language::Yaml), "# ");
+    }
+
+    #[test]
+    fn test_comment_prefix_conf() {
+        assert_eq!(comment_prefix(Language::Conf), "# ");
+    }
+
+    #[test]
+    fn test_comment_prefix_hcl() {
+        assert_eq!(comment_prefix(Language::Hcl), "# ");
+    }
+
+    #[test]
+    fn test_comment_prefix_has_trailing_space() {
+        for lang in [Language::Yaml, Language::Conf, Language::Hcl] {
+            let prefix = comment_prefix(lang);
+            assert!(prefix.ends_with(' '), "comment prefix should end with a space");
+        }
+    }
+
+    #[test]
+    fn test_comment_prefix_trimmed_is_shorter() {
+        for lang in [Language::Yaml, Language::Conf, Language::Hcl] {
+            let prefix = comment_prefix(lang);
+            let trimmed = prefix.trim_end();
+            assert!(trimmed.len() < prefix.len());
         }
     }
 }

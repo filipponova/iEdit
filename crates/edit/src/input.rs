@@ -202,6 +202,8 @@ pub mod vk {
     pub const F22: InputKey = InputKey::new(0x85);
     pub const F23: InputKey = InputKey::new(0x86);
     pub const F24: InputKey = InputKey::new(0x87);
+
+    pub const OEM_2: InputKey = InputKey::new(0xBF); // '/' key
 }
 
 /// Keyboard modifiers.
@@ -338,6 +340,7 @@ impl<'input> Iterator for Stream<'_, '_, 'input> {
                         let key = ch as u32 | 0x40;
                         return Some(Input::Keyboard(kbmod::CTRL | InputKey::new(key)));
                     }
+                    '\x1f' => return Some(Input::Keyboard(kbmod::CTRL | vk::OEM_2)),
                     '\x7f' => return Some(Input::Keyboard(vk::BACK)),
                     _ => {}
                 },
