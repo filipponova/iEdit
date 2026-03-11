@@ -76,7 +76,7 @@ iEdit includes built-in syntax highlighting for the following file types:
 | HCL/Terraform | `.hcl`, `.tf`, `.tfvars` |
 | YAML | `.yml`, `.yaml` |
 
-More languages are planned: Python, Rust, Go, Shell Script etc.
+More languages are planned, including Python, Rust, Go, shell scripts, and more.
 
 ## Build Configuration
 
