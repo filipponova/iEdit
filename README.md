@@ -73,7 +73,7 @@ iEdit includes built-in syntax highlighting for the following file types:
 | Language | Extensions / Files |
 | --- | --- |
 | Conf/INI | `.conf`, `.ini`, `.cfg`, `.cnf`, `.properties`, `.env`, `.toml`, and well-known config files (`config`, `credentials`, `.gitconfig`, `.editorconfig`, etc.) |
-| HCL/Terraform | `.hcl` |
+| HCL/Terraform | `.hcl`, `.tf`, `.tfvars` |
 | YAML | `.yml`, `.yaml` |
 
 More languages are planned: Python, Rust, Go, Shell Script etc.
