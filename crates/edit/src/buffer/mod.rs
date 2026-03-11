@@ -2490,6 +2490,159 @@ impl TextBuffer {
         );
     }
 
+    /// Toggles line comments on the current line or selected lines.
+    ///
+    /// Behavior matches VS Code's Ctrl+/:
+    /// - If all non-blank lines in the range are commented, uncomments them.
+    /// - Otherwise, comments all non-blank lines.
+    /// - Blank lines are skipped.
+    /// - The entire operation undoes as a single step.
+    pub fn toggle_line_comment(&mut self) {
+        let Some(lang) = self.highlight_language() else {
+            return;
+        };
+        let prefix = highlight::comment_prefix(lang);
+        let prefix_bytes = prefix.as_bytes();
+        let prefix_no_space = prefix.trim_end();
+        let prefix_no_space_bytes = prefix_no_space.as_bytes();
+
+        let selection = self.selection;
+        let mut selection_beg = self.cursor.logical_pos;
+        let mut selection_end = selection_beg;
+
+        if let Some(TextBufferSelection { beg, end }) = &selection {
+            selection_beg = *beg;
+            selection_end = *end;
+        }
+
+        let line_start = selection_beg.y.min(selection_end.y);
+        let line_end = selection_beg.y.max(selection_end.y);
+
+        // First pass: determine whether to comment or uncomment.
+        let mut all_commented = true;
+        let mut has_non_blank = false;
+
+        for y in line_start..=line_end {
+            self.cursor_move_to_logical(Point { x: 0, y });
+            let offset = self.cursor.offset;
+
+            if self.is_line_blank(offset) {
+                continue;
+            }
+            has_non_blank = true;
+
+            if !self.line_starts_with(offset, prefix_bytes)
+                && !self.line_starts_with(offset, prefix_no_space_bytes)
+            {
+                all_commented = false;
+                break;
+            }
+        }
+
+        if !has_non_blank {
+            return;
+        }
+
+        let uncomment = all_commented;
+
+        // Second pass: apply changes.
+        self.edit_begin_grouping();
+
+        for y in line_start..=line_end {
+            self.cursor_move_to_logical(Point { x: 0, y });
+            let offset = self.cursor.offset;
+
+            if uncomment {
+                // Determine which prefix variant to remove.
+                let remove_len = if self.line_starts_with(offset, prefix_bytes) {
+                    prefix_bytes.len()
+                } else if self.line_starts_with(offset, prefix_no_space_bytes) {
+                    prefix_no_space_bytes.len()
+                } else {
+                    continue; // blank line
+                };
+
+                let cursor_at_start = self.cursor;
+                let cursor_at_end = self.cursor_move_to_logical_internal(
+                    self.cursor,
+                    Point { x: remove_len as CoordType, y },
+                );
+
+                self.edit_begin(HistoryType::Delete, cursor_at_start);
+                self.edit_delete(cursor_at_end);
+                self.edit_end();
+
+                let delta = -(remove_len as CoordType);
+                if y == selection_beg.y {
+                    selection_beg.x = (selection_beg.x + delta).max(0);
+                }
+                if y == selection_end.y {
+                    selection_end.x = (selection_end.x + delta).max(0);
+                }
+            } else {
+                if self.is_line_blank(offset) {
+                    continue;
+                }
+
+                self.edit_begin(HistoryType::Write, self.cursor);
+                self.edit_write(prefix_bytes);
+                self.edit_end();
+
+                let delta = prefix_bytes.len() as CoordType;
+                if y == selection_beg.y {
+                    selection_beg.x += delta;
+                }
+                if y == selection_end.y {
+                    selection_end.x += delta;
+                }
+            }
+        }
+
+        self.edit_end_grouping();
+
+        self.set_cursor_internal(self.cursor_move_to_logical_internal(self.cursor, selection_end));
+        self.set_selection(
+            selection.map(|_| TextBufferSelection { beg: selection_beg, end: selection_end }),
+        );
+    }
+
+    /// Returns `true` if the line at `offset` is blank (empty or whitespace-only).
+    fn is_line_blank(&self, mut offset: usize) -> bool {
+        loop {
+            let chunk = self.read_forward(offset);
+            if chunk.is_empty() {
+                return true;
+            }
+            for &b in chunk {
+                match b {
+                    b'\n' | b'\r' => return true,
+                    b' ' | b'\t' => {}
+                    _ => return false,
+                }
+            }
+            offset += chunk.len();
+        }
+    }
+
+    /// Returns `true` if the content at `offset` starts with `prefix`.
+    fn line_starts_with(&self, mut offset: usize, prefix: &[u8]) -> bool {
+        let mut matched = 0;
+        while matched < prefix.len() {
+            let chunk = self.read_forward(offset);
+            if chunk.is_empty() {
+                return false;
+            }
+            let remaining = prefix.len() - matched;
+            let to_check = chunk.len().min(remaining);
+            if chunk[..to_check] != prefix[matched..matched + to_check] {
+                return false;
+            }
+            matched += to_check;
+            offset += to_check;
+        }
+        true
+    }
+
     fn measure_indent_internal(
         &self,
         mut offset: usize,

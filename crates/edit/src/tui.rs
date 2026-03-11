@@ -2729,6 +2729,9 @@ impl<'a> Context<'a, '_> {
                     kbmod::ALT => tb.set_word_wrap(!tb.is_word_wrap_enabled()),
                     _ => return false,
                 },
+                vk::OEM_2 if modifiers == kbmod::CTRL && !single_line => {
+                    tb.toggle_line_comment();
+                }
                 _ => return false,
             }
 

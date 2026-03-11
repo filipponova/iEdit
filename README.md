@@ -9,7 +9,7 @@ iEdit is a fork of [Microsoft Edit](https://github.com/microsoft/edit), a termin
 ## Features
 
 - Lightweight and fast — single binary under 500KB
-- Syntax highlighting (YAML, conf/INI, and more coming)
+- Syntax highlighting (YAML, conf/INI, HCL, and more coming)
 - Modern keyboard shortcuts (VS Code-like)
 - Mouse support
 - Search and replace with ICU regex
@@ -60,6 +60,7 @@ Press `F10` to access the menu bar. The editor uses standard VS Code-like shortc
 | `Ctrl+W` | Close file |
 | `Ctrl+Q` | Quit |
 | `Ctrl+F` | Find |
+| `Ctrl+/` | Comment and Uncomment code |
 | `Ctrl+R` | Replace |
 | `Ctrl+G` | Go to line |
 | `Ctrl+P` | Go to file |
@@ -71,10 +72,11 @@ iEdit includes built-in syntax highlighting for the following file types:
 
 | Language | Extensions / Files |
 | --- | --- |
-| YAML | `.yml`, `.yaml` |
 | Conf/INI | `.conf`, `.ini`, `.cfg`, `.cnf`, `.properties`, `.env`, `.toml`, and well-known config files (`config`, `credentials`, `.gitconfig`, `.editorconfig`, etc.) |
+| HCL/Terraform | `.hcl` |
+| YAML | `.yml`, `.yaml` |
 
-More languages are planned: Python, Rust, Go, and HCL/Terraform.
+More languages are planned: Python, Rust, Go, Shell Script etc.
 
 ## Build Configuration
 
