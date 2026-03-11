@@ -60,7 +60,7 @@ Press `F10` to access the menu bar. The editor uses standard VS Code-like shortc
 | `Ctrl+W` | Close file |
 | `Ctrl+Q` | Quit |
 | `Ctrl+F` | Find |
-| `Ctrl+/` | Comment and Uncomment code |
+| `Ctrl+/` | Comment/uncomment code |
 | `Ctrl+R` | Replace |
 | `Ctrl+G` | Go to line |
 | `Ctrl+P` | Go to file |
